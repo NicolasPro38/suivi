@@ -8,6 +8,9 @@ from models.position import Position
 from models.statut import Statut
 from models.trajet import Trajet
 from models.tache import Tache
+from models.caserne import Caserne
+from models.vehicule import Vehicule
+from models.personnel import Personnel
 
 app = create_app()
 
