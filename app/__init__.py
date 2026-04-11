@@ -16,4 +16,7 @@ def create_app():
     from app.routes import main
     app.register_blueprint(main)
 
+    from app.routes.api import api
+    app.register_blueprint(api)
+
     return app

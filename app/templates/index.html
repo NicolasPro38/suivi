@@ -3,9 +3,164 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Suivi</title>
+    <title>Dispatch Pompiers Lyon</title>
+
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; height: 100vh; display: flex; flex-direction: column; }
+
+        header {
+            background: #c0392b;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        header h1 { font-size: 1.2rem; letter-spacing: 1px; }
+        header span { font-size: 0.85rem; opacity: 0.8; }
+
+        #main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        #sidebar {
+            width: 320px;
+            background: #16213e;
+            overflow-y: auto;
+            padding: 16px;
+            border-right: 1px solid #0f3460;
+        }
+
+        #sidebar h2 {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #e74c3c;
+            margin-bottom: 12px;
+        }
+
+        .caserne-card {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border-left: 4px solid #e74c3c;
+            transition: background 0.2s;
+        }
+        .caserne-card:hover { background: #1a4a7a; }
+        .caserne-card h3 { font-size: 0.95rem; margin-bottom: 6px; }
+        .caserne-card p { font-size: 0.78rem; color: #aaa; margin-bottom: 8px; }
+
+        .stats {
+            display: flex;
+            gap: 8px;
+        }
+        .stat {
+            background: #16213e;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 0.75rem;
+            text-align: center;
+        }
+        .stat .val { font-size: 1rem; font-weight: bold; color: #2ecc71; }
+        .stat .lab { color: #aaa; }
+
+        #map { flex: 1; }
+
+        .leaflet-popup-content-wrapper {
+            background: #16213e;
+            color: #fff;
+            border: 1px solid #e74c3c;
+        }
+        .leaflet-popup-tip { background: #16213e; }
+        .popup-title { font-weight: bold; color: #e74c3c; margin-bottom: 6px; }
+        .popup-row { font-size: 0.82rem; margin: 2px 0; }
+    </style>
 </head>
 <body>
-    <h1>Application Suivi</h1>
+
+<header>
+    <span>🚒</span>
+    <h1>DISPATCH POMPIERS — LYON</h1>
+    <span>SDMIS 69 — Centrale de commandement</span>
+</header>
+
+<div id="main">
+    <div id="sidebar">
+        <h2>🏚 Casernes</h2>
+        <div id="casernes-list">Chargement...</div>
+    </div>
+    <div id="map"></div>
+</div>
+
+<script>
+    // Init carte centrée sur Lyon
+    const map = L.map('map').setView([45.758, 4.835], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Icône caserne personnalisée
+    const caserneIcon = L.divIcon({
+        html: '🚒',
+        className: '',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+        popupAnchor: [0, -15]
+    });
+
+    // Chargement des casernes
+    fetch('/api/casernes')
+        .then(r => r.json())
+        .then(casernes => {
+            const list = document.getElementById('casernes-list');
+            list.innerHTML = '';
+
+            casernes.forEach(c => {
+                // Marker sur la carte
+                const marker = L.marker([c.lat, c.lon], {icon: caserneIcon})
+                    .addTo(map)
+                    .bindPopup(`
+                        <div class="popup-title">🚒 ${c.nom}</div>
+                        <div class="popup-row">📍 ${c.adresse}</div>
+                        <div class="popup-row">🚗 Véhicules : <b>${c.nb_vehicules_dispo}/${c.nb_vehicules}</b> disponibles</div>
+                        <div class="popup-row">👷 Personnel : <b>${c.nb_personnel_dispo}/${c.nb_personnel}</b> disponibles</div>
+                    `);
+
+                // Card dans la sidebar
+                const card = document.createElement('div');
+                card.className = 'caserne-card';
+                card.innerHTML = `
+                    <h3>🚒 ${c.nom}</h3>
+                    <p>${c.adresse}</p>
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="val">${c.nb_vehicules_dispo}/${c.nb_vehicules}</div>
+                            <div class="lab">Véhicules</div>
+                        </div>
+                        <div class="stat">
+                            <div class="val">${c.nb_personnel_dispo}/${c.nb_personnel}</div>
+                            <div class="lab">Personnel</div>
+                        </div>
+                    </div>
+                `;
+                card.addEventListener('click', () => {
+                    map.setView([c.lat, c.lon], 15);
+                    marker.openPopup();
+                });
+                list.appendChild(card);
+            });
+        });
+</script>
+
 </body>
 </html>
