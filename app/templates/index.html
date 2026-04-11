@@ -4,85 +4,63 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dispatch Pompiers Lyon</title>
-
-    <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; background: #1a1a2e; color: #fff; height: 100vh; display: flex; flex-direction: column; }
-
-        header {
-            background: #c0392b;
-            padding: 12px 20px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-        }
+        header { background: #c0392b; padding: 12px 20px; display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
         header h1 { font-size: 1.2rem; letter-spacing: 1px; }
-        header span { font-size: 0.85rem; opacity: 0.8; }
-
-        #main {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        #sidebar {
-            width: 320px;
-            background: #16213e;
-            overflow-y: auto;
-            padding: 16px;
-            border-right: 1px solid #0f3460;
-        }
-
-        #sidebar h2 {
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #e74c3c;
-            margin-bottom: 12px;
-        }
-
-        .caserne-card {
-            background: #0f3460;
-            border-radius: 8px;
-            padding: 12px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            border-left: 4px solid #e74c3c;
-            transition: background 0.2s;
-        }
+        header span.sub { font-size: 0.85rem; opacity: 0.8; margin-left: auto; }
+        #main { display: flex; flex: 1; overflow: hidden; }
+        #sidebar { width: 320px; background: #16213e; overflow-y: auto; padding: 16px; border-right: 1px solid #0f3460; display: flex; flex-direction: column; gap: 16px; }
+        .section-title { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: #e74c3c; margin-bottom: 8px; }
+        .caserne-card { background: #0f3460; border-radius: 8px; padding: 12px; margin-bottom: 8px; cursor: pointer; border-left: 4px solid #e74c3c; transition: background 0.2s; }
         .caserne-card:hover { background: #1a4a7a; }
-        .caserne-card h3 { font-size: 0.95rem; margin-bottom: 6px; }
-        .caserne-card p { font-size: 0.78rem; color: #aaa; margin-bottom: 8px; }
-
-        .stats {
-            display: flex;
-            gap: 8px;
-        }
-        .stat {
-            background: #16213e;
-            border-radius: 4px;
-            padding: 4px 8px;
-            font-size: 0.75rem;
-            text-align: center;
-        }
+        .caserne-card h3 { font-size: 0.9rem; margin-bottom: 6px; }
+        .caserne-card p { font-size: 0.75rem; color: #aaa; margin-bottom: 6px; }
+        .stats { display: flex; gap: 8px; }
+        .stat { background: #16213e; border-radius: 4px; padding: 4px 8px; font-size: 0.75rem; text-align: center; flex: 1; }
         .stat .val { font-size: 1rem; font-weight: bold; color: #2ecc71; }
-        .stat .lab { color: #aaa; }
-
-        #map { flex: 1; }
-
-        .leaflet-popup-content-wrapper {
-            background: #16213e;
-            color: #fff;
-            border: 1px solid #e74c3c;
-        }
+        .stat .lab { color: #aaa; font-size: 0.7rem; }
+        .intervention-card { background: #0f3460; border-radius: 8px; padding: 10px; margin-bottom: 8px; border-left: 4px solid #f39c12; font-size: 0.8rem; }
+        .intervention-card.en_attente { border-left-color: #e74c3c; }
+        .intervention-card.vehicule_envoye { border-left-color: #f39c12; }
+        .intervention-card.en_cours { border-left-color: #3498db; }
+        .intervention-card.termine { border-left-color: #2ecc71; }
+        .int-type { font-weight: bold; margin-bottom: 4px; }
+        .int-info { color: #aaa; margin-bottom: 4px; }
+        .int-actions { display: flex; gap: 6px; margin-top: 6px; }
+        .btn-terminer { background: #27ae60; border: none; color: white; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+        .btn-terminer:hover { background: #2ecc71; }
+        #map { flex: 1; position: relative; }
+        #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #16213e; border: 1px solid #e74c3c; border-radius: 10px; padding: 20px; z-index: 9999; width: 420px; max-height: 85vh; overflow-y: auto; }
+        #modal h3 { color: #e74c3c; margin-bottom: 12px; }
+        #modal select { width: 100%; padding: 8px; margin-bottom: 10px; background: #0f3460; border: 1px solid #0f3460; color: #fff; border-radius: 4px; }
+        #modal > label { font-size: 0.8rem; color: #aaa; display: block; margin-bottom: 4px; }
+        #modal-buttons { display: flex; gap: 8px; margin-top: 10px; }
+        #modal-buttons button { flex: 1; padding: 8px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        #btn-confirmer { background: #e74c3c; color: white; }
+        #btn-annuler { background: #555; color: white; }
+        #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9998; }
+        #vehicules-dispo, #personnel-dispo { width: 100%; min-height: 30px; max-height: 150px; overflow-y: auto; margin-bottom: 10px; background: #1a2a4a; border-radius: 4px; padding: 4px; }
+        .checkbox-item { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 4px; font-size: 0.78rem; color: #fff; box-sizing: border-box; }
+        .checkbox-item:hover { background: #1a4a7a; }
+        .checkbox-item input[type="checkbox"] { flex-shrink: 0; width: 14px; height: 14px; cursor: pointer; }
+        .checkbox-item span { color: #fff; flex: 1; }
+        #searchbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 6px; width: 400px; }
+        #search-input { flex: 1; padding: 8px 12px; border-radius: 20px; border: 2px solid #e74c3c; background: #16213e; color: #fff; font-size: 0.9rem; outline: none; }
+        #search-input::placeholder { color: #aaa; }
+        #search-btn { padding: 8px 14px; background: #e74c3c; border: none; border-radius: 20px; color: white; cursor: pointer; font-size: 0.9rem; }
+        #search-results { position: absolute; top: 44px; left: 0; right: 0; background: #16213e; border: 1px solid #e74c3c; border-radius: 8px; display: none; z-index: 1001; }
+        .search-result-item { padding: 8px 12px; font-size: 0.8rem; cursor: pointer; border-bottom: 1px solid #0f3460; color: #fff; }
+        .search-result-item:hover { background: #0f3460; }
+        .search-result-item:last-child { border-bottom: none; }
+        .leaflet-popup-content-wrapper { background: #16213e; color: #fff; border: 1px solid #e74c3c; }
         .leaflet-popup-tip { background: #16213e; }
         .popup-title { font-weight: bold; color: #e74c3c; margin-bottom: 6px; }
         .popup-row { font-size: 0.82rem; margin: 2px 0; }
+        #hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: #fff; padding: 8px 16px; border-radius: 20px; font-size: 0.8rem; z-index: 1000; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -90,77 +68,392 @@
 <header>
     <span>🚒</span>
     <h1>DISPATCH POMPIERS — LYON</h1>
-    <span>SDMIS 69 — Centrale de commandement</span>
+    <span class="sub">Cliquez sur la carte pour créer une intervention</span>
 </header>
 
 <div id="main">
     <div id="sidebar">
-        <h2>🏚 Casernes</h2>
-        <div id="casernes-list">Chargement...</div>
+        <div>
+            <div class="section-title">🏚 Casernes</div>
+            <div id="casernes-list">Chargement...</div>
+        </div>
+        <div>
+            <div class="section-title">🚨 Interventions actives</div>
+            <div id="interventions-list">Chargement...</div>
+        </div>
     </div>
-    <div id="map"></div>
+    <div id="map">
+        <div id="searchbar" onclick="event.stopPropagation()">
+            <input id="search-input" type="text" placeholder="🔍 Rechercher une adresse à Lyon..."/>
+            <button id="search-btn">Chercher</button>
+            <div id="search-results"></div>
+        </div>
+        <div id="hint">🖱️ Cliquez sur la carte pour créer une intervention</div>
+    </div>
+</div>
+
+<div id="overlay"></div>
+<div id="modal">
+    <h3>🚨 Nouvelle intervention</h3>
+    <p style="font-size:0.8rem;color:#aaa;margin-bottom:10px;" id="modal-adresse"></p>
+    <label>Type d'intervention</label>
+    <select id="type-intervention">
+        <option value="secours_personne">🚑 Secours à personne</option>
+        <option value="accident_route">🚗 Accident de la route</option>
+        <option value="incendie_batiment">🔥 Incendie de bâtiment</option>
+        <option value="incendie_vehicule">🔥 Incendie de véhicule</option>
+        <option value="incendie_objet">🔥 Incendie d'objet</option>
+        <option value="incendie_foret">🌲 Incendie de forêt</option>
+        <option value="fuite_gaz">⚡ Fuite de gaz</option>
+        <option value="inondation">💧 Inondation</option>
+        <option value="ouverture_porte">🚪 Ouverture de porte</option>
+        <option value="sauvetage_animal">🐾 Sauvetage animal</option>
+        <option value="risque_chimique">☣️ Risque chimique</option>
+        <option value="constat_deces">⚰️ Constat de décès</option>
+    </select>
+    <label>Caserne</label>
+    <select id="select-caserne" onchange="chargerDisponibles(this.value)"></select>
+    <label>Véhicules disponibles</label>
+    <div id="vehicules-dispo"></div>
+    <label>Personnel disponible</label>
+    <div id="personnel-dispo"></div>
+    <div id="modal-buttons">
+        <button id="btn-confirmer">✅ Envoyer</button>
+        <button id="btn-annuler">❌ Annuler</button>
+    </div>
 </div>
 
 <script>
-    // Init carte centrée sur Lyon
     const map = L.map('map').setView([45.758, 4.835], 13);
-
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    // Icône caserne personnalisée
-    const caserneIcon = L.divIcon({
-        html: '🚒',
-        className: '',
-        iconSize: [30, 30],
-        iconAnchor: [15, 15],
-        popupAnchor: [0, -15]
-    });
+    const caserneIcon = L.divIcon({ html: '🚒', className: '', iconSize: [30,30], iconAnchor: [15,15], popupAnchor: [0,-15] });
+    const interventionIcons = {
+        en_attente:      L.divIcon({ html: '🔴', className: '', iconSize: [24,24], iconAnchor: [12,12] }),
+        vehicule_envoye: L.divIcon({ html: '🟡', className: '', iconSize: [24,24], iconAnchor: [12,12] }),
+        en_cours:        L.divIcon({ html: '🔵', className: '', iconSize: [24,24], iconAnchor: [12,12] }),
+        termine:         L.divIcon({ html: '🟢', className: '', iconSize: [24,24], iconAnchor: [12,12] }),
+    };
 
-    // Chargement des casernes
+    const typeLabels = {
+        secours_personne: '🚑 Secours à personne',
+        accident_route:   '🚗 Accident de la route',
+        incendie_batiment:'🔥 Incendie bâtiment',
+        incendie_vehicule:'🔥 Incendie véhicule',
+        incendie_objet:   '🔥 Incendie objet',
+        incendie_foret:   '🌲 Incendie forêt',
+        fuite_gaz:        '⚡ Fuite de gaz',
+        inondation:       '💧 Inondation',
+        ouverture_porte:  '🚪 Ouverture porte',
+        sauvetage_animal: '🐾 Sauvetage animal',
+        risque_chimique:  '☣️ Risque chimique',
+        constat_deces:    '⚰️ Constat de décès',
+    };
+
+    let interventionMarkers = {};
+    let clickLatLng = null;
+    let caserneMarkers = {};
+
+    // ── CASERNES ──────────────────────────────────────────────
     fetch('/api/casernes')
-        .then(r => r.json())
-        .then(casernes => {
-            const list = document.getElementById('casernes-list');
+        .then(function(r) { return r.json(); })
+        .then(function(casernes) {
+            var list = document.getElementById('casernes-list');
             list.innerHTML = '';
-
-            casernes.forEach(c => {
-                // Marker sur la carte
-                const marker = L.marker([c.lat, c.lon], {icon: caserneIcon})
+            casernes.forEach(function(c) {
+                var marker = L.marker([c.lat, c.lon], {icon: caserneIcon})
                     .addTo(map)
-                    .bindPopup(`
-                        <div class="popup-title">🚒 ${c.nom}</div>
-                        <div class="popup-row">📍 ${c.adresse}</div>
-                        <div class="popup-row">🚗 Véhicules : <b>${c.nb_vehicules_dispo}/${c.nb_vehicules}</b> disponibles</div>
-                        <div class="popup-row">👷 Personnel : <b>${c.nb_personnel_dispo}/${c.nb_personnel}</b> disponibles</div>
-                    `);
+                    .bindPopup(
+                        '<div class="popup-title">🚒 ' + c.nom + '</div>' +
+                        '<div class="popup-row">📍 ' + c.adresse + '</div>' +
+                        '<div class="popup-row">🚗 Véhicules : <b>' + c.nb_vehicules_dispo + '/' + c.nb_vehicules + '</b></div>' +
+                        '<div class="popup-row">👷 Personnel : <b>' + c.nb_personnel_dispo + '/' + c.nb_personnel + '</b></div>'
+                    );
+                caserneMarkers[c.id] = marker;
 
-                // Card dans la sidebar
-                const card = document.createElement('div');
+                var card = document.createElement('div');
                 card.className = 'caserne-card';
-                card.innerHTML = `
-                    <h3>🚒 ${c.nom}</h3>
-                    <p>${c.adresse}</p>
-                    <div class="stats">
-                        <div class="stat">
-                            <div class="val">${c.nb_vehicules_dispo}/${c.nb_vehicules}</div>
-                            <div class="lab">Véhicules</div>
-                        </div>
-                        <div class="stat">
-                            <div class="val">${c.nb_personnel_dispo}/${c.nb_personnel}</div>
-                            <div class="lab">Personnel</div>
-                        </div>
-                    </div>
-                `;
-                card.addEventListener('click', () => {
-                    map.setView([c.lat, c.lon], 15);
-                    marker.openPopup();
-                });
+                card.innerHTML =
+                    '<h3>🚒 ' + c.nom + '</h3>' +
+                    '<p>' + c.adresse + '</p>' +
+                    '<div class="stats">' +
+                        '<div class="stat"><div class="val">' + c.nb_vehicules_dispo + '/' + c.nb_vehicules + '</div><div class="lab">Véhicules</div></div>' +
+                        '<div class="stat"><div class="val">' + c.nb_personnel_dispo + '/' + c.nb_personnel + '</div><div class="lab">Personnel</div></div>' +
+                    '</div>';
+                card.addEventListener('click', function() { map.setView([c.lat, c.lon], 15); marker.openPopup(); });
                 list.appendChild(card);
             });
         });
-</script>
 
+    // ── INTERVENTIONS ─────────────────────────────────────────
+    function chargerInterventions() {
+        fetch('/api/interventions')
+            .then(function(r) { return r.json(); })
+            .then(function(interventions) {
+                Object.values(interventionMarkers).forEach(function(m) { map.removeLayer(m); });
+                interventionMarkers = {};
+                var list = document.getElementById('interventions-list');
+                list.innerHTML = interventions.length === 0
+                    ? '<p style="color:#aaa;font-size:0.8rem;">Aucune intervention active</p>'
+                    : '';
+                interventions.forEach(function(i) {
+                    var parts = i.geom.split(',');
+                    var lat = parseFloat(parts[0]);
+                    var lon = parseFloat(parts[1]);
+                    var icon = interventionIcons[i.statut] || interventionIcons['en_attente'];
+                    var marker = L.marker([lat, lon], {icon: icon})
+                        .addTo(map)
+                        .bindPopup(
+                            '<div class="popup-title">' + (typeLabels[i.type] || i.type) + '</div>' +
+                            '<div class="popup-row">📍 ' + i.adresse + '</div>' +
+                            '<div class="popup-row">🚒 ' + (i.caserne_nom || 'Non assignée') + '</div>' +
+                            '<div class="popup-row">🚗 ' + (i.vehicule || 'Aucun véhicule') + '</div>' +
+                            '<div class="popup-row">⚡ Statut : <b>' + i.statut.replace(/_/g, ' ') + '</b></div>'
+                        );
+                    interventionMarkers[i.id] = marker;
+
+                    var card = document.createElement('div');
+                    card.className = 'intervention-card ' + i.statut;
+                    card.innerHTML =
+                        '<div class="int-type">' + (typeLabels[i.type] || i.type) + '</div>' +
+                        '<div class="int-info">📍 ' + i.adresse + '</div>' +
+                        '<div class="int-info">🚒 ' + (i.caserne_nom || 'Non assignée') + '</div>' +
+                        '<div class="int-info">🚗 ' + (i.vehicule || 'Aucun véhicule') + '</div>' +
+                        '<div class="int-info">⚡ ' + i.statut.replace(/_/g, ' ') + '</div>' +
+                        '<div class="int-actions"><button class="btn-terminer" onclick="terminerIntervention(' + i.id + ')">✅ Terminer</button></div>';
+                    card.addEventListener('click', function() { map.setView([lat, lon], 16); });
+                    list.appendChild(card);
+                });
+            });
+    }
+
+    function terminerIntervention(id) {
+        fetch('/api/interventions/' + id + '/terminer', {method: 'POST'})
+            .then(function() { chargerInterventions(); rafraichirCasernes(); });
+    }
+
+    // ── MODAL ─────────────────────────────────────────────────
+    function afficherVehicules(vehicules) {
+        var div = document.getElementById('vehicules-dispo');
+        if (vehicules.length === 0) {
+            div.innerHTML = '<p style="color:#e74c3c;font-size:0.78rem;padding:4px;">Aucun véhicule disponible</p>';
+            return;
+        }
+        div.innerHTML = '';
+        vehicules.forEach(function(v) {
+            var item = document.createElement('div');
+            item.className = 'checkbox-item';
+            if (v.recommande && !v.en_retour) item.style.background = '#1a4a2a';
+            if (v.en_retour) item.style.background = '#2a2a1a';
+
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.id = 'v_' + v.id;
+            cb.name = 'vehicule';
+            cb.value = v.id;
+            if (v.recommande && !v.en_retour) cb.checked = true;
+
+            var sp = document.createElement('span');
+            var label = '🚒 ' + v.type.toUpperCase() + ' — ' + v.nom + ' (' + v.immatriculation + ')';
+            if (v.recommande) label += ' ⭐';
+            if (v.en_retour) label += ' 🔄 En retour';
+            sp.textContent = label;
+
+            item.appendChild(cb);
+            item.appendChild(sp);
+            div.appendChild(item);
+        });
+    }
+
+    function afficherPersonnel(personnel) {
+        var div = document.getElementById('personnel-dispo');
+        if (personnel.length === 0) {
+            div.innerHTML = '<p style="color:#e74c3c;font-size:0.78rem;padding:4px;">Aucun personnel disponible</p>';
+            return;
+        }
+        div.innerHTML = '';
+        personnel.forEach(function(p, i) {
+            var item = document.createElement('div');
+            item.className = 'checkbox-item';
+            var cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.id = 'p_' + p.id;
+            cb.name = 'personnel';
+            cb.value = p.id;
+            if (i < 3) cb.checked = true;
+            var sp = document.createElement('span');
+            sp.textContent = '👷 ' + p.grade + ' — ' + p.prenom + ' ' + p.nom;
+            item.appendChild(cb);
+            item.appendChild(sp);
+            div.appendChild(item);
+        });
+    }
+
+    function chargerDisponibles(caserneId) {
+        var type = document.getElementById('type-intervention').value;
+        fetch('/api/dispatch/caserne/' + caserneId + '/disponibles?type=' + type)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                afficherVehicules(data.vehicules);
+                afficherPersonnel(data.personnel);
+            });
+    }
+
+    function ouvrirModal(lat, lon, adresse) {
+        document.getElementById('modal-adresse').textContent = '📍 ' + adresse;
+        document.getElementById('modal').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block';
+        var type = document.getElementById('type-intervention').value;
+        fetch('/api/dispatch/suggestion?lat=' + lat + '&lon=' + lon + '&type=' + type)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var sel = document.getElementById('select-caserne');
+                sel.innerHTML = '';
+                data.casernes.forEach(function(c) {
+                    var opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = '🚒 ' + c.nom + ' (' + c.distance_km + ' km)' + (c.suggested ? ' ★ Suggérée' : '');
+                    if (c.suggested) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                afficherVehicules(data.vehicules);
+                afficherPersonnel(data.personnel);
+            });
+    }
+
+    document.getElementById('btn-annuler').addEventListener('click', function() {
+        document.getElementById('modal').style.display = 'none';
+        document.getElementById('overlay').style.display = 'none';
+    });
+
+    document.getElementById('btn-confirmer').addEventListener('click', function() {
+        var type = document.getElementById('type-intervention').value;
+        var caserneId = document.getElementById('select-caserne').value;
+        var vehiculesSelectionnes = Array.from(document.querySelectorAll('input[name="vehicule"]:checked')).map(function(i) { return i.value; });
+        var personnelSelectionne = Array.from(document.querySelectorAll('input[name="personnel"]:checked')).map(function(i) { return i.value; });
+        fetch('/api/interventions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                lat: clickLatLng.lat,
+                lon: clickLatLng.lng,
+                type: type,
+                adresse: clickLatLng.adresse || 'Lyon',
+                caserne_id: caserneId,
+                vehicules_ids: vehiculesSelectionnes,
+                personnel_ids: personnelSelectionne
+            })
+        }).then(function() {
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('overlay').style.display = 'none';
+            chargerInterventions();
+            rafraichirCasernes();
+        });
+    });
+
+    document.getElementById('type-intervention').addEventListener('change', function() {
+        var caserneId = document.getElementById('select-caserne').value;
+        if (caserneId) chargerDisponibles(caserneId);
+    });
+
+    // ── CLIC CARTE ────────────────────────────────────────────
+    var searchbarEl = document.getElementById('searchbar');
+    searchbarEl.addEventListener('mouseenter', function() { map.off('click'); });
+    searchbarEl.addEventListener('mouseleave', function() { map.on('click', onMapClick); });
+
+    function onMapClick(e) {
+        clickLatLng = e.latlng;
+        clickLatLng.adresse = 'Lyon';
+        ouvrirModal(e.latlng.lat, e.latlng.lng, 'Recherche adresse...');
+        fetch('/api/geocode/reverse?lat=' + e.latlng.lat + '&lon=' + e.latlng.lng)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                clickLatLng.adresse = data.adresse;
+                document.getElementById('modal-adresse').textContent = '📍 ' + data.adresse;
+            });
+    }
+    map.on('click', onMapClick);
+
+    // ── BARRE DE RECHERCHE ────────────────────────────────────
+    function rechercherAdresse() {
+        var q = document.getElementById('search-input').value.trim();
+        if (!q) return;
+        fetch('/api/geocode/search?q=' + encodeURIComponent(q))
+            .then(function(r) { return r.json(); })
+            .then(function(results) {
+                var div = document.getElementById('search-results');
+                div.innerHTML = '';
+                if (results.length === 0) { div.style.display = 'none'; return; }
+                div.style.display = 'block';
+                results.forEach(function(res) {
+                    var item = document.createElement('div');
+                    item.className = 'search-result-item';
+                    item.textContent = res.adresse;
+                    item.addEventListener('click', function() {
+                        map.setView([res.lat, res.lon], 17);
+                        div.style.display = 'none';
+                        document.getElementById('search-input').value = res.adresse.split(',')[0];
+                        clickLatLng = L.latLng(res.lat, res.lon);
+                        clickLatLng.adresse = res.adresse.split(',').slice(0,2).join(',');
+                        ouvrirModal(res.lat, res.lon, clickLatLng.adresse);
+                    });
+                    div.appendChild(item);
+                });
+            });
+    }
+
+    document.getElementById('search-btn').addEventListener('click', rechercherAdresse);
+    document.getElementById('search-input').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') rechercherAdresse();
+    });
+    var autocompleteTimer = null;
+    document.getElementById('search-input').addEventListener('input', function(e) {
+        clearTimeout(autocompleteTimer);
+        var val = e.target.value.trim();
+        if (val.length < 3) { document.getElementById('search-results').style.display = 'none'; return; }
+        autocompleteTimer = setTimeout(rechercherAdresse, 300);
+    });
+    document.addEventListener('click', function(e) {
+        if (!document.getElementById('searchbar').contains(e.target)) {
+            document.getElementById('search-results').style.display = 'none';
+        }
+    });
+
+    // ── STATS CASERNES TEMPS REEL ─────────────────────────────
+    function rafraichirCasernes() {
+        fetch('/api/casernes')
+            .then(function(r) { return r.json(); })
+            .then(function(casernes) {
+                casernes.forEach(function(c) {
+                    var cards = document.querySelectorAll('.caserne-card');
+                    cards.forEach(function(card) {
+                        if (card.querySelector('h3').textContent.includes(c.nom)) {
+                            var vals = card.querySelectorAll('.val');
+                            if (vals.length >= 2) {
+                                vals[0].textContent = c.nb_vehicules_dispo + '/' + c.nb_vehicules;
+                                vals[1].textContent = c.nb_personnel_dispo + '/' + c.nb_personnel;
+                                vals[0].style.color = c.nb_vehicules_dispo === 0 ? '#e74c3c' : '#2ecc71';
+                            }
+                            if (caserneMarkers[c.id]) {
+                                caserneMarkers[c.id].setPopupContent(
+                                    '<div class="popup-title">🚒 ' + c.nom + '</div>' +
+                                    '<div class="popup-row">📍 ' + c.adresse + '</div>' +
+                                    '<div class="popup-row">🚗 Véhicules : <b>' + c.nb_vehicules_dispo + '/' + c.nb_vehicules + '</b></div>' +
+                                    '<div class="popup-row">👷 Personnel : <b>' + c.nb_personnel_dispo + '/' + c.nb_personnel + '</b></div>'
+                                );
+                            }
+                        }
+                    });
+                });
+            });
+    }
+
+    chargerInterventions();
+    rafraichirCasernes();
+    setInterval(chargerInterventions, 15000);
+    setInterval(rafraichirCasernes, 15000);
+</script>
 </body>
 </html>

@@ -11,7 +11,9 @@ class VehiculeTypeEnum(enum.Enum):
 
 class VehiculeStatutEnum(enum.Enum):
     disponible = 'disponible'
-    en_intervention = 'en_intervention'
+    en_route = 'en_route'
+    sur_place = 'sur_place'
+    en_retour = 'en_retour'
     en_maintenance = 'en_maintenance'
     hors_service = 'hors_service'
 
