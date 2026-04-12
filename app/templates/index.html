@@ -205,8 +205,8 @@
     // ── SUIVI VÉHICULES ───────────────────────────────────────
 const vehiculeIcons = {
     en_route:   L.divIcon({ html: '🚒', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
-    sur_place:  L.divIcon({ html: '🔥', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
-    en_retour:  L.divIcon({ html: '↩️', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
+    sur_place:  L.divIcon({ html: '🚒', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
+    en_retour:  L.divIcon({ html: '↩🚒', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
 };
 
 const polylineColors = {
@@ -216,7 +216,7 @@ const polylineColors = {
 };
 
 function chargerTrajetsOSRM(lat1, lon1, lat2, lon2, vehiculeId, etat) {
-    var key = vehiculeId + '_' + etat;
+    var key = vehiculeId + '_' + etat + '_' + lat2.toFixed(4) + '_' + lon2.toFixed(4);
     if (vehiculeTrajets[key]) return Promise.resolve(vehiculeTrajets[key]);
     return fetch('/api/trajet/osrm?lat1=' + lat1 + '&lon1=' + lon1 + '&lat2=' + lat2 + '&lon2=' + lon2)
         .then(function(r) { return r.json(); })
@@ -273,33 +273,15 @@ function majVehicules() {
 
                 chargerTrajetsOSRM(lat1, lon1, lat2, lon2, vid, v.etat)
                     .then(function(waypoints) {
-                        // Calculer la progression
+                        // Calculer la progression basée sur le temps écoulé
                         var progress = 0;
-                        var now = new Date();
-                        var dureeTrajet = 5 * 60 * 1000; // 5 min en ms
 
                         if (v.etat === 'en_route') {
-                            // La progression est calculée côté API
-                            var pos = [v.lat, v.lon];
-                            // On cherche le point le plus proche sur le trajet
-                            var minDist = Infinity;
-                            var bestIdx = 0;
-                            waypoints.forEach(function(wp, idx) {
-                                var d = Math.pow(wp[0]-v.lat,2) + Math.pow(wp[1]-v.lon,2);
-                                if (d < minDist) { minDist = d; bestIdx = idx; }
-                            });
-                            progress = bestIdx / (waypoints.length - 1);
+                            progress = Math.min(v.elapsed_sec / v.duree_trajet_sec, 1.0);
                         } else if (v.etat === 'sur_place') {
                             progress = 1.0;
                         } else if (v.etat === 'en_retour') {
-                            var pos = [v.lat, v.lon];
-                            var minDist = Infinity;
-                            var bestIdx = 0;
-                            waypoints.forEach(function(wp, idx) {
-                                var d = Math.pow(wp[0]-v.lat,2) + Math.pow(wp[1]-v.lon,2);
-                                if (d < minDist) { minDist = d; bestIdx = idx; }
-                            });
-                            progress = bestIdx / (waypoints.length - 1);
+                            progress = Math.min((v.elapsed_sec || 0) / (v.duree_trajet_sec || 300), 1.0);
                         }
 
                         var pos = interpolerPosition(waypoints, progress);
@@ -309,19 +291,25 @@ function majVehicules() {
                         if (vehiculeMarkers[vid]) {
                             vehiculeMarkers[vid].setLatLng(pos);
                             vehiculeMarkers[vid].setIcon(icon);
+                            vehiculeMarkers[vid].setPopupContent(
+                                '<div class="popup-title">🚒 ' + v.vehicule_nom + '</div>' +
+                                '<div class="popup-row">Type : ' + v.vehicule_type.toUpperCase() + '</div>' +
+                                '<div class="popup-row">État : <b>' + v.etat.replace(/_/g, ' ') + '</b></div>' +
+                                '<div class="popup-row">Caserne : ' + v.caserne_nom + '</div>'
+                            );
                         } else {
                             vehiculeMarkers[vid] = L.marker(pos, {icon: icon, zIndexOffset: 500})
                                 .addTo(map)
                                 .bindPopup(
                                     '<div class="popup-title">🚒 ' + v.vehicule_nom + '</div>' +
                                     '<div class="popup-row">Type : ' + v.vehicule_type.toUpperCase() + '</div>' +
-                                    '<div class="popup-row">État : ' + v.etat.replace(/_/g, ' ') + '</div>' +
+                                    '<div class="popup-row">État : <b>' + v.etat.replace(/_/g, ' ') + '</b></div>' +
                                     '<div class="popup-row">Caserne : ' + v.caserne_nom + '</div>'
                                 );
                         }
 
-                        // Trajet restant (de la position actuelle à la destination)
-                        var remaining = waypoints.slice(Math.floor(progress * (waypoints.length-1)));
+                        // Trajet restant
+                        var remaining = waypoints.slice(Math.floor(progress * (waypoints.length - 1)));
                         if (remaining.length > 1) remaining[0] = pos;
 
                         if (vehiculePolylines[vid]) {

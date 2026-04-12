@@ -146,20 +146,37 @@ def creer_intervention():
 
     db.session.commit()
 
-    # Lancer les timers de progression
+    # Lancer les timers de progression avec durée OSRM réelle
     if vehicule_principal:
         from app.services.simulateur import passer_sur_place, passer_en_retour
         from flask import current_app
         import threading
-        duree_sur_place = 20
+        import requests as req
         app_obj = current_app._get_current_object()
+
+        # Récupérer la durée de trajet réelle via OSRM
+        try:
+            from geoalchemy2.shape import to_shape
+            caserne = Caserne.query.get(int(caserne_id))
+            pt = to_shape(caserne.geom)
+            osrm_url = f"http://router.project-osrm.org/route/v1/driving/{pt.x},{pt.y};{lon},{lat}"
+            r = req.get(osrm_url, params={'overview': 'false'}, timeout=5)
+            duree_trajet_sec = r.json()['routes'][0]['duration']
+        except:
+            duree_trajet_sec = 5 * 60  # fallback 5 minutes
+
+        duree_sur_place_sec = 20 * 60  # 20 minutes sur place
+
+        # Dès que le véhicule arrive → sur_place + en_cours immédiatement
         threading.Timer(
-            5 * 60,
+            duree_trajet_sec,
             passer_sur_place,
             args=[intervention.id, vehicule_principal.id, app_obj]
         ).start()
+
+        # Après trajet + durée sur place → en_retour
         threading.Timer(
-            (5 + duree_sur_place) * 60,
+            duree_trajet_sec + duree_sur_place_sec,
             passer_en_retour,
             args=[intervention.id, app_obj]
         ).start()
@@ -419,20 +436,28 @@ def get_vehicules_positions():
 
         if vehicule.statut == VehiculeStatutEnum.en_route and i.started_at:
             elapsed = (now - i.started_at).total_seconds()
+            duree_trajet = 300  # 5 min par défaut
             progress = min(elapsed / duree_trajet, 1.0)
             lat = lat_caserne + (lat_int - lat_caserne) * progress
             lon = lon_caserne + (lon_int - lon_caserne) * progress
             etat = 'en_route'
+            elapsed_sec = elapsed
+            duree_trajet_sec = duree_trajet
         elif vehicule.statut == VehiculeStatutEnum.sur_place:
             lat = lat_int
             lon = lon_int
             etat = 'sur_place'
+            elapsed_sec = 0
+            duree_trajet_sec = 300
         elif vehicule.statut == VehiculeStatutEnum.en_retour and i.ended_at:
             elapsed = (now - i.ended_at).total_seconds()
+            duree_trajet = 300
             progress = min(elapsed / duree_trajet, 1.0)
             lat = lat_int + (lat_caserne - lat_int) * progress
             lon = lon_int + (lon_caserne - lon_int) * progress
             etat = 'en_retour'
+            elapsed_sec = elapsed
+            duree_trajet_sec = duree_trajet
         else:
             continue
 
@@ -445,6 +470,8 @@ def get_vehicules_positions():
             'etat': etat,
             'lat': lat,
             'lon': lon,
+            'elapsed_sec': elapsed_sec,
+            'duree_trajet_sec': duree_trajet_sec,
             'lat_intervention': lat_int,
             'lon_intervention': lon_int,
             'lat_caserne': lat_caserne,
