@@ -1,7 +1,8 @@
+import json
 import random
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from app import db
 from models.caserne import Caserne
 from models.vehicule import Vehicule, VehiculeStatutEnum
@@ -27,9 +28,6 @@ TYPES_INTERVENTION = [
     (InterventionTypeEnum.constat_deces,       1, 15),
 ]
 
-# Durées de trajet simulées (minutes)
-DUREE_TRAJET = 5  # minutes pour aller/retour caserne -> intervention
-
 def point_aleatoire_lyon():
     lat = random.uniform(LYON_BOUNDS['lat_min'], LYON_BOUNDS['lat_max'])
     lon = random.uniform(LYON_BOUNDS['lon_min'], LYON_BOUNDS['lon_max'])
@@ -39,12 +37,6 @@ def type_aleatoire():
     types = [t[0] for t in TYPES_INTERVENTION]
     poids = [t[1] for t in TYPES_INTERVENTION]
     return random.choices(types, weights=poids, k=1)[0]
-
-def duree_pour_type(type_intervention):
-    for t, _, duree in TYPES_INTERVENTION:
-        if t == type_intervention:
-            return duree + random.randint(-5, 10)
-    return 20
 
 def caserne_la_plus_proche(lat, lon):
     casernes = Caserne.query.filter_by(actif=True).all()
@@ -65,62 +57,170 @@ def vehicule_disponible(caserne_id):
         statut=VehiculeStatutEnum.disponible
     ).first()
 
-def passer_en_retour(intervention_id, app):
-    """Intervention terminée sur place, véhicule rentre à la caserne"""
-    with app.app_context():
-        intervention = Intervention.query.get(intervention_id)
-        if not intervention:
-            return
-        if intervention.vehicule_id:
-            vehicule = Vehicule.query.get(intervention.vehicule_id)
-            if vehicule:
-                vehicule.statut = VehiculeStatutEnum.en_retour
-        intervention.statut = InterventionStatutEnum.en_retour
-        intervention.ended_at = datetime.utcnow()
-        db.session.commit()
+def calculer_osrm_complet(lon1, lat1, lon2, lat2, fallback_duree=300):
+    """Retourne (duree_secondes, waypoints_liste) depuis OSRM."""
+    try:
+        import requests
+        url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
+        r = requests.get(url, params={'overview': 'full', 'geometries': 'geojson'}, timeout=5)
+        data = r.json()
+        route = data['routes'][0]
+        duree = route['duration']
+        coords = route['geometry']['coordinates']
+        waypoints = [[c[1], c[0]] for c in coords]  # [lon,lat] → [lat,lon]
+        return duree, waypoints
+    except:
+        return fallback_duree, [[lat1, lon1], [lat2, lon2]]
 
-        vehicule_id = intervention.vehicule_id
+def calculer_duree_osrm(lon1, lat1, lon2, lat2, fallback=300):
+    """Retourne uniquement la durée."""
+    duree, _ = calculer_osrm_complet(lon1, lat1, lon2, lat2, fallback)
+    return duree
 
-    threading.Timer(
-        DUREE_TRAJET * 60,
-        vehicule_disponible_apres_retour,
-        args=[vehicule_id, app]
-    ).start()
+def interpoler_sur_waypoints(waypoints, progress):
+    """Interpole une position sur une liste de waypoints selon la progression (0-1)."""
+    if not waypoints or len(waypoints) < 2:
+        return None
+    progress = max(0.0, min(1.0, progress))
+    total = len(waypoints) - 1
+    idx = int(progress * total)
+    frac = (progress * total) - idx
+    if idx >= total:
+        return waypoints[-1]
+    p1, p2 = waypoints[idx], waypoints[idx + 1]
+    return [p1[0] + (p2[0] - p1[0]) * frac, p1[1] + (p2[1] - p1[1]) * frac]
 
-def vehicule_disponible_apres_retour(vehicule_id, app):
-    """Véhicule arrivé à la caserne, de nouveau disponible"""
+def get_position_sur_waypoints(intervention, now):
+    """
+    Calcule la position exacte du véhicule en interpolant sur les vrais waypoints OSRM.
+    Retourne (lat, lon) ou None.
+    """
+    statut = intervention.statut
+
+    if statut == InterventionStatutEnum.vehicule_envoye:
+        if not intervention.started_at or not intervention.prevu_sur_place_at:
+            return None
+        waypoints = json.loads(intervention.waypoints_aller_json) if intervention.waypoints_aller_json else None
+        if not waypoints:
+            return None
+        duree = (intervention.prevu_sur_place_at - intervention.started_at).total_seconds()
+        elapsed = (now - intervention.started_at).total_seconds()
+        progress = min(elapsed / duree, 1.0) if duree > 0 else 1.0
+        return interpoler_sur_waypoints(waypoints, progress)
+
+    elif statut == InterventionStatutEnum.en_cours:
+        parts = intervention.geom.split(',')
+        return float(parts[0]), float(parts[1])
+
+    elif statut == InterventionStatutEnum.en_retour:
+        if not intervention.ended_at or not intervention.prevu_retour_at:
+            return None
+        waypoints = json.loads(intervention.waypoints_retour_json) if intervention.waypoints_retour_json else None
+        if not waypoints:
+            return None
+        duree = (intervention.prevu_retour_at - intervention.ended_at).total_seconds()
+        elapsed = (now - intervention.ended_at).total_seconds()
+        progress = min(elapsed / duree, 1.0) if duree > 0 else 1.0
+        return interpoler_sur_waypoints(waypoints, progress)
+
+    return None
+
+def to_shape_lat(caserne):
+    from geoalchemy2.shape import to_shape
+    return to_shape(caserne.geom).y
+
+def to_shape_lon(caserne):
+    from geoalchemy2.shape import to_shape
+    return to_shape(caserne.geom).x
+
+def progresser_interventions(app):
     with app.app_context():
         from models.personnel import Personnel, PersonnelStatutEnum
-        vehicule = Vehicule.query.get(vehicule_id)
-        if vehicule and vehicule.statut == VehiculeStatutEnum.en_retour:
-            vehicule.statut = VehiculeStatutEnum.disponible
+        from models.intervention_personnel import InterventionPersonnel
+        from geoalchemy2.shape import to_shape
+        now = datetime.utcnow()
 
-            # Terminer l'intervention liée
-            intervention = Intervention.query.filter_by(
-                vehicule_id=vehicule_id,
-                statut=InterventionStatutEnum.en_retour
-            ).first()
-            if intervention:
-                intervention.statut = InterventionStatutEnum.termine
-
-                # Remettre tout le personnel lié disponible
-                from models.intervention_personnel import InterventionPersonnel
-                liens = InterventionPersonnel.query.filter_by(
-                    intervention_id=intervention.id
-                ).all()
-                for lien in liens:
-                    p = Personnel.query.get(lien.personnel_id)
-                    if p and p.statut == PersonnelStatutEnum.en_intervention:
-                        p.statut = PersonnelStatutEnum.disponible
-
+        # 1. vehicule_envoye → sur_place + en_cours
+        for i in Intervention.query.filter(
+            Intervention.statut == InterventionStatutEnum.vehicule_envoye,
+            Intervention.prevu_sur_place_at != None,
+            Intervention.prevu_sur_place_at <= now
+        ).all():
+            v = Vehicule.query.get(i.vehicule_id)
+            if v:
+                v.statut = VehiculeStatutEnum.sur_place
+            i.statut = InterventionStatutEnum.en_cours
             db.session.commit()
 
-def creer_intervention(app):
+        # 2. en_cours → en_retour
+        for i in Intervention.query.filter(
+            Intervention.statut == InterventionStatutEnum.en_cours,
+            Intervention.prevu_retour_at != None,
+            Intervention.prevu_retour_at <= now
+        ).all():
+            v = Vehicule.query.get(i.vehicule_id) if i.vehicule_id else None
+            if v:
+                v.statut = VehiculeStatutEnum.en_retour
+            i.statut = InterventionStatutEnum.en_retour
+            i.ended_at = now
+
+            parts = i.geom.split(',')
+            lat_int, lon_int = float(parts[0]), float(parts[1])
+            i.retour_lat = lat_int
+            i.retour_lon = lon_int
+
+            if i.caserne_id:
+                caserne = Caserne.query.get(i.caserne_id)
+                if caserne:
+                    pt = to_shape(caserne.geom)
+                    duree_retour, waypoints_retour = calculer_osrm_complet(
+                        lon_int, lat_int, pt.x, pt.y
+                    )
+                    i.prevu_retour_at = now + timedelta(seconds=duree_retour)
+                    i.waypoints_retour_json = json.dumps(waypoints_retour)
+            db.session.commit()
+
+        # 3. en_retour → termine + disponible
+        for i in Intervention.query.filter(
+            Intervention.statut == InterventionStatutEnum.en_retour,
+            Intervention.prevu_retour_at != None,
+            Intervention.prevu_retour_at <= now
+        ).all():
+            v = Vehicule.query.get(i.vehicule_id) if i.vehicule_id else None
+            if v:
+                v.statut = VehiculeStatutEnum.disponible
+            liens = InterventionPersonnel.query.filter_by(intervention_id=i.id).all()
+            for lien in liens:
+                p = Personnel.query.get(lien.personnel_id)
+                if p and p.statut == PersonnelStatutEnum.en_intervention:
+                    p.statut = PersonnelStatutEnum.disponible
+            i.statut = InterventionStatutEnum.termine
+            db.session.commit()
+
+def boucle_progression(app):
+    while True:
+        try:
+            progresser_interventions(app)
+        except Exception as e:
+            print(f"Erreur progression: {e}")
+        time.sleep(10)
+
+def creer_intervention_auto(app):
     with app.app_context():
         lat, lon = point_aleatoire_lyon()
         type_i = type_aleatoire()
         caserne = caserne_la_plus_proche(lat, lon)
         vehicule = vehicule_disponible(caserne.id) if caserne else None
+        now = datetime.utcnow()
+
+        depart_lat = to_shape_lat(caserne) if caserne else None
+        depart_lon = to_shape_lon(caserne) if caserne else None
+
+        duree_trajet, waypoints_aller = calculer_osrm_complet(
+            depart_lon, depart_lat, lon, lat
+        ) if caserne else (300, [[depart_lat, depart_lon], [lat, lon]])
+
+        duree_sur_place = random.randint(30, 120)
 
         intervention = Intervention(
             type=type_i,
@@ -129,59 +229,31 @@ def creer_intervention(app):
             geom=f"{lat},{lon}",
             caserne_id=caserne.id if caserne else None,
             vehicule_id=vehicule.id if vehicule else None,
-            created_at=datetime.utcnow()
+            created_at=now,
+            depart_lat=depart_lat,
+            depart_lon=depart_lon,
         )
         db.session.add(intervention)
 
         if vehicule:
-            # Phase 1 : en_route
             vehicule.statut = VehiculeStatutEnum.en_route
             intervention.statut = InterventionStatutEnum.vehicule_envoye
-            intervention.started_at = datetime.utcnow()
+            intervention.started_at = now
+            intervention.prevu_sur_place_at = now + timedelta(seconds=duree_trajet)
+            intervention.prevu_retour_at = now + timedelta(seconds=duree_trajet + duree_sur_place)
+            intervention.waypoints_aller_json = json.dumps(waypoints_aller)
 
-        db.session.commit()
-
-        intervention_id = intervention.id
-        type_value = intervention.type
-        duree_sur_place = duree_pour_type(type_value)
-
-        if vehicule:
-            # Après trajet aller → sur_place
-            threading.Timer(
-                DUREE_TRAJET * 60,
-                passer_sur_place,
-                args=[intervention_id, vehicule.id, app]
-            ).start()
-
-            # Après trajet aller + durée sur place → en_retour
-            threading.Timer(
-                (DUREE_TRAJET + duree_sur_place) * 60,
-                passer_en_retour,
-                args=[intervention_id, app]
-            ).start()
-
-        return intervention_id, duree_sur_place
-
-def passer_sur_place(intervention_id, vehicule_id, app):
-    """Véhicule arrivé sur place"""
-    with app.app_context():
-        vehicule = Vehicule.query.get(vehicule_id)
-        if vehicule and vehicule.statut == VehiculeStatutEnum.en_route:
-            vehicule.statut = VehiculeStatutEnum.sur_place
-        intervention = Intervention.query.get(intervention_id)
-        if intervention:
-            intervention.statut = InterventionStatutEnum.en_cours
         db.session.commit()
 
 def boucle_simulation(app):
     while True:
         try:
-            time.sleep(random.randint(600, 1800))  # 10 à 30 minutes
-            creer_intervention(app)
+            time.sleep(random.randint(600, 1800))
+            creer_intervention_auto(app)
         except Exception as e:
             print(f"Erreur simulateur: {e}")
 
 def demarrer_simulateur(app):
-    thread = threading.Thread(target=boucle_simulation, args=[app], daemon=True)
-    thread.start()
+    threading.Thread(target=boucle_progression, args=[app], daemon=True).start()
+    threading.Thread(target=boucle_simulation, args=[app], daemon=True).start()
     print("✅ Simulateur démarré")
