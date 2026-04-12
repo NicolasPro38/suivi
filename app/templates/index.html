@@ -31,8 +31,8 @@
         .int-type { font-weight: bold; margin-bottom: 4px; }
         .int-info { color: #aaa; margin-bottom: 4px; }
         .int-actions { display: flex; gap: 6px; margin-top: 6px; }
-        .btn-terminer { background: #27ae60; border: none; color: white; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
-        .btn-terminer:hover { background: #2ecc71; }
+        .btn-terminer { background: #c0392b; border: none; color: white; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+        .btn-terminer:hover { background: #e74c3c; }
         #map { flex: 1; position: relative; }
         #modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #16213e; border: 1px solid #e74c3c; border-radius: 10px; padding: 20px; z-index: 9999; width: 420px; max-height: 85vh; overflow-y: auto; }
         #modal h3 { color: #e74c3c; margin-bottom: 12px; }
@@ -129,7 +129,7 @@
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
 
-    const caserneIcon = L.divIcon({ html: '🚒', className: '', iconSize: [30,30], iconAnchor: [15,15], popupAnchor: [0,-15] });
+    const caserneIcon = L.divIcon({ html: '🏚', className: '', iconSize: [30,30], iconAnchor: [15,15], popupAnchor: [0,-15] });
     const interventionIcons = {
         en_attente:      L.divIcon({ html: '🔴', className: '', iconSize: [24,24], iconAnchor: [12,12] }),
         vehicule_envoye: L.divIcon({ html: '🟡', className: '', iconSize: [24,24], iconAnchor: [12,12] }),
@@ -155,6 +155,21 @@
     let interventionMarkers = {};
     let clickLatLng = null;
     let caserneMarkers = {};
+    let vehiculeMarkers = {};
+    let vehiculePolylines = {};
+    let vehiculeTrajets = {};
+
+    const interventionColors = {};
+    const colorPalette = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#e91e63'];
+    let colorIndex = 0;
+
+    function getInterventionColor(interventionId) {
+        if (!interventionColors[interventionId]) {
+            interventionColors[interventionId] = colorPalette[colorIndex % colorPalette.length];
+            colorIndex++;
+        }
+        return interventionColors[interventionId];
+    }
 
     // ── CASERNES ──────────────────────────────────────────────
     fetch('/api/casernes')
@@ -187,6 +202,144 @@
             });
         });
 
+    // ── SUIVI VÉHICULES ───────────────────────────────────────
+const vehiculeIcons = {
+    en_route:   L.divIcon({ html: '🚒', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
+    sur_place:  L.divIcon({ html: '🔥', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
+    en_retour:  L.divIcon({ html: '↩️', className: '', iconSize: [28,28], iconAnchor: [14,14] }),
+};
+
+const polylineColors = {
+    en_route:  '#f39c12',
+    sur_place: '#3498db',
+    en_retour: '#2ecc71',
+};
+
+function chargerTrajetsOSRM(lat1, lon1, lat2, lon2, vehiculeId, etat) {
+    var key = vehiculeId + '_' + etat;
+    if (vehiculeTrajets[key]) return Promise.resolve(vehiculeTrajets[key]);
+    return fetch('/api/trajet/osrm?lat1=' + lat1 + '&lon1=' + lon1 + '&lat2=' + lat2 + '&lon2=' + lon2)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            vehiculeTrajets[key] = data.waypoints;
+            return data.waypoints;
+        });
+}
+
+function interpolerPosition(waypoints, progress) {
+    if (!waypoints || waypoints.length < 2) return null;
+    var total = waypoints.length - 1;
+    var idx = Math.floor(progress * total);
+    var frac = (progress * total) - idx;
+    if (idx >= total) return waypoints[total];
+    var p1 = waypoints[idx];
+    var p2 = waypoints[idx + 1];
+    return [
+        p1[0] + (p2[0] - p1[0]) * frac,
+        p1[1] + (p2[1] - p1[1]) * frac
+    ];
+}
+
+function majVehicules() {
+    fetch('/api/vehicules/positions')
+        .then(function(r) { return r.json(); })
+        .then(function(vehicules) {
+            // Supprimer les marqueurs des véhicules qui ne sont plus actifs
+            Object.keys(vehiculeMarkers).forEach(function(vid) {
+                if (!vehicules.find(function(v) { return v.vehicule_id == vid; })) {
+                    map.removeLayer(vehiculeMarkers[vid]);
+                    delete vehiculeMarkers[vid];
+                    if (vehiculePolylines[vid]) {
+                        map.removeLayer(vehiculePolylines[vid]);
+                        delete vehiculePolylines[vid];
+                    }
+                }
+            });
+
+            vehicules.forEach(function(v) {
+                var vid = v.vehicule_id;
+                var color = getInterventionColor(v.intervention_id);
+                var icon = vehiculeIcons[v.etat] || vehiculeIcons['en_route'];
+
+                // Déterminer départ/arrivée selon l'état
+                var lat1, lon1, lat2, lon2;
+                if (v.etat === 'en_retour') {
+                    lat1 = v.lat_intervention; lon1 = v.lon_intervention;
+                    lat2 = v.lat_caserne;      lon2 = v.lon_caserne;
+                } else {
+                    lat1 = v.lat_caserne;      lon1 = v.lon_caserne;
+                    lat2 = v.lat_intervention; lon2 = v.lon_intervention;
+                }
+
+                chargerTrajetsOSRM(lat1, lon1, lat2, lon2, vid, v.etat)
+                    .then(function(waypoints) {
+                        // Calculer la progression
+                        var progress = 0;
+                        var now = new Date();
+                        var dureeTrajet = 5 * 60 * 1000; // 5 min en ms
+
+                        if (v.etat === 'en_route') {
+                            // La progression est calculée côté API
+                            var pos = [v.lat, v.lon];
+                            // On cherche le point le plus proche sur le trajet
+                            var minDist = Infinity;
+                            var bestIdx = 0;
+                            waypoints.forEach(function(wp, idx) {
+                                var d = Math.pow(wp[0]-v.lat,2) + Math.pow(wp[1]-v.lon,2);
+                                if (d < minDist) { minDist = d; bestIdx = idx; }
+                            });
+                            progress = bestIdx / (waypoints.length - 1);
+                        } else if (v.etat === 'sur_place') {
+                            progress = 1.0;
+                        } else if (v.etat === 'en_retour') {
+                            var pos = [v.lat, v.lon];
+                            var minDist = Infinity;
+                            var bestIdx = 0;
+                            waypoints.forEach(function(wp, idx) {
+                                var d = Math.pow(wp[0]-v.lat,2) + Math.pow(wp[1]-v.lon,2);
+                                if (d < minDist) { minDist = d; bestIdx = idx; }
+                            });
+                            progress = bestIdx / (waypoints.length - 1);
+                        }
+
+                        var pos = interpolerPosition(waypoints, progress);
+                        if (!pos) return;
+
+                        // Marqueur véhicule
+                        if (vehiculeMarkers[vid]) {
+                            vehiculeMarkers[vid].setLatLng(pos);
+                            vehiculeMarkers[vid].setIcon(icon);
+                        } else {
+                            vehiculeMarkers[vid] = L.marker(pos, {icon: icon, zIndexOffset: 500})
+                                .addTo(map)
+                                .bindPopup(
+                                    '<div class="popup-title">🚒 ' + v.vehicule_nom + '</div>' +
+                                    '<div class="popup-row">Type : ' + v.vehicule_type.toUpperCase() + '</div>' +
+                                    '<div class="popup-row">État : ' + v.etat.replace(/_/g, ' ') + '</div>' +
+                                    '<div class="popup-row">Caserne : ' + v.caserne_nom + '</div>'
+                                );
+                        }
+
+                        // Trajet restant (de la position actuelle à la destination)
+                        var remaining = waypoints.slice(Math.floor(progress * (waypoints.length-1)));
+                        if (remaining.length > 1) remaining[0] = pos;
+
+                        if (vehiculePolylines[vid]) {
+                            map.removeLayer(vehiculePolylines[vid]);
+                        }
+                        if (v.etat !== 'sur_place' && remaining.length > 1) {
+                            vehiculePolylines[vid] = L.polyline(remaining, {
+                                color: color,
+                                weight: 4,
+                                opacity: 0.8,
+                                dashArray: v.etat === 'en_retour' ? '8,6' : null
+                            }).addTo(map);
+                        }
+                    });
+            });
+        });
+}
+    
     // ── INTERVENTIONS ─────────────────────────────────────────
     function chargerInterventions() {
         fetch('/api/interventions')
@@ -214,15 +367,18 @@
                         );
                     interventionMarkers[i.id] = marker;
 
+                    var color = getInterventionColor(i.id);
                     var card = document.createElement('div');
                     card.className = 'intervention-card ' + i.statut;
+                    card.style.borderLeftColor = color;
                     card.innerHTML =
                         '<div class="int-type">' + (typeLabels[i.type] || i.type) + '</div>' +
                         '<div class="int-info">📍 ' + i.adresse + '</div>' +
                         '<div class="int-info">🚒 ' + (i.caserne_nom || 'Non assignée') + '</div>' +
                         '<div class="int-info">🚗 ' + (i.vehicule || 'Aucun véhicule') + '</div>' +
+                        '<div class="int-info">👷 ' + (i.personnel && i.personnel.length > 0 ? i.personnel.join(', ') : 'Aucun personnel') + '</div>' +
                         '<div class="int-info">⚡ ' + i.statut.replace(/_/g, ' ') + '</div>' +
-                        '<div class="int-actions"><button class="btn-terminer" onclick="terminerIntervention(' + i.id + ')">✅ Terminer</button></div>';
+                        '<div class="int-actions"><button class="btn-terminer" onclick="terminerIntervention(' + i.id + ')">🚫 Annuler l\'intervention</button></div>';
                     card.addEventListener('click', function() { map.setView([lat, lon], 16); });
                     list.appendChild(card);
                 });
@@ -454,6 +610,9 @@
     rafraichirCasernes();
     setInterval(chargerInterventions, 15000);
     setInterval(rafraichirCasernes, 15000);
+    // Démarrage suivi véhicules toutes les 5 secondes
+    majVehicules();
+    setInterval(majVehicules, 5000);
 </script>
 </body>
 </html>

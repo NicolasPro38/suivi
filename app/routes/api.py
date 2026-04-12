@@ -6,6 +6,7 @@ from models.intervention import Intervention, InterventionTypeEnum, Intervention
 from geoalchemy2.shape import to_shape
 from app import db
 from datetime import datetime
+from models.intervention_personnel import InterventionPersonnel
 
 # Véhicules recommandés par type d'intervention
 VEHICULES_RECOMMANDES = {
@@ -39,7 +40,10 @@ def get_casernes():
             'lon': point.x,
             'nb_vehicules': Vehicule.query.filter_by(caserne_id=c.id).count(),
             'nb_personnel': Personnel.query.filter_by(caserne_id=c.id).count(),
-            'nb_vehicules_dispo': Vehicule.query.filter_by(caserne_id=c.id, statut='disponible').count(),
+            'nb_vehicules_dispo': Vehicule.query.filter(
+                Vehicule.caserne_id == c.id,
+                Vehicule.statut.in_([VehiculeStatutEnum.disponible, VehiculeStatutEnum.en_retour])
+            ).count(),
             'nb_personnel_dispo': Personnel.query.filter_by(caserne_id=c.id, statut='disponible').count(),
         })
     return jsonify(result)
@@ -80,6 +84,15 @@ def get_interventions():
             d['caserne_nom'] = c.nom if c else None
         else:
             d['caserne_nom'] = None
+
+        # Personnel assigné
+        liens = InterventionPersonnel.query.filter_by(intervention_id=i.id).all()
+        personnel_list = []
+        for lien in liens:
+            p = Personnel.query.get(lien.personnel_id)
+            if p:
+                personnel_list.append(p.grade.value + ' ' + p.prenom + ' ' + p.nom)
+        d['personnel'] = personnel_list
         result.append(d)
     return jsonify(result)
 
@@ -108,6 +121,7 @@ def creer_intervention():
         created_at=datetime.utcnow()
     )
     db.session.add(intervention)
+    db.session.flush()  # Pour obtenir l'id de l'intervention
 
     # Mettre TOUS les véhicules sélectionnés en route
     for vid in vehicules_ids:
@@ -115,11 +129,59 @@ def creer_intervention():
         if v:
             v.statut = VehiculeStatutEnum.en_route
 
-    # Mettre TOUT le personnel sélectionné en intervention
+    # Mettre TOUT le personnel sélectionné en intervention + liaison
     for pid in personnel_ids:
         p = Personnel.query.get(pid)
         if p:
             p.statut = PersonnelStatutEnum.en_intervention
+            lien = InterventionPersonnel(
+                intervention_id=intervention.id,
+                personnel_id=pid
+            )
+            db.session.add(lien)
+
+    if vehicule_principal:
+        intervention.statut = InterventionStatutEnum.vehicule_envoye
+        intervention.started_at = datetime.utcnow()
+
+    db.session.commit()
+
+    # Lancer les timers de progression
+    if vehicule_principal:
+        from app.services.simulateur import passer_sur_place, passer_en_retour
+        from flask import current_app
+        import threading
+        duree_sur_place = 20
+        app_obj = current_app._get_current_object()
+        threading.Timer(
+            5 * 60,
+            passer_sur_place,
+            args=[intervention.id, vehicule_principal.id, app_obj]
+        ).start()
+        threading.Timer(
+            (5 + duree_sur_place) * 60,
+            passer_en_retour,
+            args=[intervention.id, app_obj]
+        ).start()
+
+    return jsonify(intervention.to_dict()), 201
+
+    # Mettre TOUS les véhicules sélectionnés en route
+    for vid in vehicules_ids:
+        v = Vehicule.query.get(vid)
+        if v:
+            v.statut = VehiculeStatutEnum.en_route
+
+    # Mettre TOUT le personnel sélectionné en intervention + liaison
+    for pid in personnel_ids:
+        p = Personnel.query.get(pid)
+        if p:
+            p.statut = PersonnelStatutEnum.en_intervention
+            lien = InterventionPersonnel(
+                intervention_id=intervention.id,
+                personnel_id=pid
+            )
+            db.session.add(lien)
 
     if vehicule_principal:
         intervention.statut = InterventionStatutEnum.vehicule_envoye
@@ -304,3 +366,90 @@ def disponibles_caserne(caserne_id):
         'vehicules': vehicules,
         'personnel': [p.to_dict() for p in personnel]
     })
+
+@api.route('/trajet/osrm', methods=['GET'])
+def get_trajet_osrm():
+    import requests
+    lat1 = request.args.get('lat1')
+    lon1 = request.args.get('lon1')
+    lat2 = request.args.get('lat2')
+    lon2 = request.args.get('lon2')
+    try:
+        url = f"http://router.project-osrm.org/route/v1/driving/{lon1},{lat1};{lon2},{lat2}"
+        r = requests.get(url, params={'overview': 'full', 'geometries': 'geojson'})
+        data = r.json()
+        coords = data['routes'][0]['geometry']['coordinates']
+        # OSRM retourne [lon, lat], on inverse en [lat, lon] pour Leaflet
+        waypoints = [[c[1], c[0]] for c in coords]
+        duree = data['routes'][0]['duration']
+        return jsonify({'waypoints': waypoints, 'duree': duree})
+    except:
+        return jsonify({'waypoints': [[float(lat1), float(lon1)], [float(lat2), float(lon2)]], 'duree': 300})
+
+@api.route('/vehicules/positions', methods=['GET'])
+def get_vehicules_positions():
+    from geoalchemy2.shape import to_shape
+
+    interventions_actives = Intervention.query.filter(
+        Intervention.statut.in_([
+            InterventionStatutEnum.vehicule_envoye,
+            InterventionStatutEnum.en_cours
+        ]),
+        Intervention.vehicule_id != None,
+        Intervention.caserne_id != None
+    ).all()
+
+    result = []
+    for i in interventions_actives:
+        vehicule = Vehicule.query.get(i.vehicule_id)
+        caserne = Caserne.query.get(i.caserne_id)
+        if not vehicule or not caserne:
+            continue
+
+        pt_caserne = to_shape(caserne.geom)
+        lat_caserne = pt_caserne.y
+        lon_caserne = pt_caserne.x
+
+        parts = i.geom.split(',')
+        lat_int = float(parts[0])
+        lon_int = float(parts[1])
+
+        now = datetime.utcnow()
+        duree_trajet = 5 * 60
+
+        if vehicule.statut == VehiculeStatutEnum.en_route and i.started_at:
+            elapsed = (now - i.started_at).total_seconds()
+            progress = min(elapsed / duree_trajet, 1.0)
+            lat = lat_caserne + (lat_int - lat_caserne) * progress
+            lon = lon_caserne + (lon_int - lon_caserne) * progress
+            etat = 'en_route'
+        elif vehicule.statut == VehiculeStatutEnum.sur_place:
+            lat = lat_int
+            lon = lon_int
+            etat = 'sur_place'
+        elif vehicule.statut == VehiculeStatutEnum.en_retour and i.ended_at:
+            elapsed = (now - i.ended_at).total_seconds()
+            progress = min(elapsed / duree_trajet, 1.0)
+            lat = lat_int + (lat_caserne - lat_int) * progress
+            lon = lon_int + (lon_caserne - lon_int) * progress
+            etat = 'en_retour'
+        else:
+            continue
+
+        result.append({
+            'vehicule_id': vehicule.id,
+            'vehicule_nom': vehicule.nom,
+            'vehicule_type': vehicule.type.value,
+            'intervention_id': i.id,
+            'intervention_type': i.type.value,
+            'etat': etat,
+            'lat': lat,
+            'lon': lon,
+            'lat_intervention': lat_int,
+            'lon_intervention': lon_int,
+            'lat_caserne': lat_caserne,
+            'lon_caserne': lon_caserne,
+            'caserne_nom': caserne.nom
+        })
+
+    return jsonify(result)

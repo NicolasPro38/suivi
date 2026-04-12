@@ -7,3 +7,4 @@ from models.caserne import Caserne
 from models.vehicule import Vehicule, VehiculeTypeEnum, VehiculeStatutEnum
 from models.personnel import Personnel, PersonnelStatutEnum, PersonnelGradeEnum
 from models.intervention import Intervention, InterventionTypeEnum, InterventionStatutEnum
+from models.intervention_personnel import InterventionPersonnel

@@ -12,11 +12,14 @@ from models.caserne import Caserne
 from models.vehicule import Vehicule
 from models.personnel import Personnel
 from models.intervention import Intervention
+from models.intervention_personnel import InterventionPersonnel
 
 app = create_app()
 
-from app.services.simulateur import demarrer_simulateur
-demarrer_simulateur(app)
+import os
+if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+    from app.services.simulateur import demarrer_simulateur
+    demarrer_simulateur(app)
 
 if __name__ == "__main__":
     app.run()
