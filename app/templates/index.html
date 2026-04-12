@@ -591,6 +591,7 @@ function majVehicules() {
                                 vals[0].textContent = c.nb_vehicules_dispo + '/' + c.nb_vehicules;
                                 vals[1].textContent = c.nb_personnel_dispo + '/' + c.nb_personnel;
                                 vals[0].style.color = c.nb_vehicules_dispo === 0 ? '#e74c3c' : '#2ecc71';
+                                vals[1].style.color = c.nb_personnel_dispo === 0 ? '#e74c3c' : '#2ecc71';
                             }
                             if (caserneMarkers[c.id]) {
                                 caserneMarkers[c.id].setPopupContent(
