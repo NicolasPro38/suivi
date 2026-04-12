@@ -75,14 +75,12 @@ def passer_en_retour(intervention_id, app):
             vehicule = Vehicule.query.get(intervention.vehicule_id)
             if vehicule:
                 vehicule.statut = VehiculeStatutEnum.en_retour
-        intervention.statut = InterventionStatutEnum.termine
+        intervention.statut = InterventionStatutEnum.en_retour
         intervention.ended_at = datetime.utcnow()
         db.session.commit()
 
-        intervention_id_local = intervention_id
         vehicule_id = intervention.vehicule_id
 
-    # Après le trajet retour, le véhicule est de nouveau disponible
     threading.Timer(
         DUREE_TRAJET * 60,
         vehicule_disponible_apres_retour,
@@ -92,9 +90,29 @@ def passer_en_retour(intervention_id, app):
 def vehicule_disponible_apres_retour(vehicule_id, app):
     """Véhicule arrivé à la caserne, de nouveau disponible"""
     with app.app_context():
+        from models.personnel import Personnel, PersonnelStatutEnum
         vehicule = Vehicule.query.get(vehicule_id)
         if vehicule and vehicule.statut == VehiculeStatutEnum.en_retour:
             vehicule.statut = VehiculeStatutEnum.disponible
+
+            # Terminer l'intervention liée
+            intervention = Intervention.query.filter_by(
+                vehicule_id=vehicule_id,
+                statut=InterventionStatutEnum.en_retour
+            ).first()
+            if intervention:
+                intervention.statut = InterventionStatutEnum.termine
+
+                # Remettre tout le personnel lié disponible
+                from models.intervention_personnel import InterventionPersonnel
+                liens = InterventionPersonnel.query.filter_by(
+                    intervention_id=intervention.id
+                ).all()
+                for lien in liens:
+                    p = Personnel.query.get(lien.personnel_id)
+                    if p and p.statut == PersonnelStatutEnum.en_intervention:
+                        p.statut = PersonnelStatutEnum.disponible
+
             db.session.commit()
 
 def creer_intervention(app):

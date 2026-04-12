@@ -20,6 +20,7 @@ class InterventionStatutEnum(enum.Enum):
     en_attente = 'en_attente'
     vehicule_envoye = 'vehicule_envoye'
     en_cours = 'en_cours'
+    en_retour = 'en_retour'
     termine = 'termine'
     annule = 'annule'
 
