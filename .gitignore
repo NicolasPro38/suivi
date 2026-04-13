@@ -5,6 +5,5 @@ __pycache__/
 .env
 instance/
 .flask_session/
-migrations/versions/
 *.sqlite
 .DS_Store
