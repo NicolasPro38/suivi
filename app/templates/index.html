@@ -241,7 +241,7 @@
     }
 
     // ── CASERNES ──────────────────────────────────────────────
-    fetch('/api/casernes')
+    fetch('/dispatch/api/casernes')
         .then(function(r) { return r.json(); })
         .then(function(casernes) {
             var list = document.getElementById('casernes-list');
@@ -272,7 +272,7 @@
 
     // ── SUIVI VÉHICULES ───────────────────────────────────────
     function majVehicules() {
-        fetch('/api/vehicules/positions')
+        fetch('/dispatch/api/vehicules/positions')
             .then(function(r) { return r.json(); })
             .then(function(vehicules) {
                 dernierPollTime = new Date();
@@ -340,7 +340,7 @@
 
     // ── INTERVENTIONS ─────────────────────────────────────────
     function chargerInterventions() {
-        fetch('/api/interventions')
+        fetch('/dispatch/api/interventions')
             .then(function(r) { return r.json(); })
             .then(function(interventions) {
                 Object.values(interventionMarkers).forEach(function(m) { map.removeLayer(m); });
@@ -391,7 +391,7 @@
     }
 
     function terminerIntervention(id) {
-        fetch('/api/interventions/' + id + '/terminer', {method: 'POST'})
+        fetch('/dispatch/api/interventions/' + id + '/terminer', {method: 'POST'})
             .then(function() { chargerInterventions(); rafraichirCasernes(); majVehicules(); });
     }
 
@@ -492,7 +492,7 @@
 
     function chargerDisponibles(caserneId) {
         var type = document.getElementById('type-intervention').value;
-        fetch('/api/dispatch/caserne/' + caserneId + '/disponibles?type=' + type)
+        fetch('/dispatch/api/caserne/' + caserneId + '/disponibles?type=' + type)
             .then(function(r) { return r.json(); })
             .then(function(data) { afficherVehicules(data.vehicules); afficherPersonnel(data.personnel); });
     }
@@ -502,7 +502,7 @@
         document.getElementById('modal').style.display = 'block';
         document.getElementById('overlay').style.display = 'block';
         var type = document.getElementById('type-intervention').value;
-        fetch('/api/dispatch/suggestion?lat=' + lat + '&lon=' + lon + '&type=' + type)
+        fetch('/dispatch/api/suggestion?lat=' + lat + '&lon=' + lon + '&type=' + type)
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 var sel = document.getElementById('select-caserne');
@@ -529,7 +529,7 @@
         var caserneId = document.getElementById('select-caserne').value;
         var vehiculesSelectionnes = Array.from(document.querySelectorAll('input[name="vehicule"]:checked')).map(function(i) { return i.value; });
         var personnelSelectionne = Array.from(document.querySelectorAll('input[name="personnel"]:checked')).map(function(i) { return i.value; });
-        fetch('/api/interventions', {
+        fetch('/dispatch/api/interventions', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -560,7 +560,7 @@
         clickLatLng = e.latlng;
         clickLatLng.adresse = 'Lyon';
         ouvrirModal(e.latlng.lat, e.latlng.lng, 'Recherche adresse...');
-        fetch('/api/geocode/reverse?lat=' + e.latlng.lat + '&lon=' + e.latlng.lng)
+        fetch('/dispatch/api/geocode/reverse?lat=' + e.latlng.lat + '&lon=' + e.latlng.lng)
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 clickLatLng.adresse = data.adresse;
@@ -573,7 +573,7 @@
     function rechercherAdresse() {
         var q = document.getElementById('search-input').value.trim();
         if (!q) return;
-        fetch('/api/geocode/search?q=' + encodeURIComponent(q))
+        fetch('/dispatch/api/geocode/search?q=' + encodeURIComponent(q))
             .then(function(r) { return r.json(); })
             .then(function(results) {
                 var div = document.getElementById('search-results');
@@ -613,7 +613,7 @@
 
     // ── STATS CASERNES ────────────────────────────────────────
     function rafraichirCasernes() {
-        fetch('/api/casernes')
+        fetch('/dispatch/api/casernes')
             .then(function(r) { return r.json(); })
             .then(function(casernes) {
                 casernes.forEach(function(c) {
