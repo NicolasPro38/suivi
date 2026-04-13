@@ -220,7 +220,7 @@ def creer_intervention_auto(app):
             depart_lon, depart_lat, lon, lat
         ) if caserne else (300, [[depart_lat, depart_lon], [lat, lon]])
 
-        duree_sur_place = random.randint(30, 120)
+        duree_sur_place = random.randint(300, 1800) # 5 à 30 minutes
 
         intervention = Intervention(
             type=type_i,

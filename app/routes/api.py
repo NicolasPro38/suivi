@@ -167,7 +167,7 @@ def creer_intervention():
     duree_trajet_sec, waypoints_aller = calculer_osrm_complet(
         depart_lon, depart_lat, lon, lat
     )
-    duree_sur_place_sec = random.randint(30, 120)
+    duree_sur_place_sec = random.randint(300, 1800) # 5 à 30 minutes
 
     intervention = Intervention(
         type=InterventionTypeEnum[data['type']],
