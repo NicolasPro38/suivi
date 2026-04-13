@@ -19,8 +19,8 @@ app = create_app()
 from werkzeug.middleware.proxy_fix import ProxyFix
 app.wsgi_app = ProxyFix(app.wsgi_app, x_prefix=1)
 
-import os
-if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+# Démarrer le simulateur une seule fois via variable d'environnement
+if os.environ.get('SIMULATEUR_ACTIF') == 'true':
     from app.services.simulateur import demarrer_simulateur
     demarrer_simulateur(app)
 
