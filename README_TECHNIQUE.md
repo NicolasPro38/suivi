@@ -166,7 +166,7 @@ Création (clic carte)
 OSRM calcule le trajet + durée
 Waypoints stockés en base
 prevu_sur_place_at = now + durée_trajet
-prevu_retour_at = now + durée_trajet + durée_sur_place (30s–2min)
+prevu_retour_at = now + durée_trajet + durée_sur_place (300s–1800s)
     ↓
 vehicule_envoye / en_route
     ↓ (boucle_progression vérifie prevu_sur_place_at)
