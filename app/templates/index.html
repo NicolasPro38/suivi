@@ -492,7 +492,7 @@
 
     function chargerDisponibles(caserneId) {
         var type = document.getElementById('type-intervention').value;
-        fetch('/dispatch/api/caserne/' + caserneId + '/disponibles?type=' + type)
+        fetch('/dispatch/api/dispatch/caserne/' + caserneId + '/disponibles?type=' + type)
             .then(function(r) { return r.json(); })
             .then(function(data) { afficherVehicules(data.vehicules); afficherPersonnel(data.personnel); });
     }
@@ -502,7 +502,7 @@
         document.getElementById('modal').style.display = 'block';
         document.getElementById('overlay').style.display = 'block';
         var type = document.getElementById('type-intervention').value;
-        fetch('/dispatch/api/suggestion?lat=' + lat + '&lon=' + lon + '&type=' + type)
+        fetch('/dispatch/api/dispatch/suggestion?lat=' + lat + '&lon=' + lon + '&type=' + type)
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 var sel = document.getElementById('select-caserne');
