@@ -244,4 +244,4 @@ Les données de référence (casernes, véhicules, personnel) sont stockées dan
 
 *Documentation à compléter après déploiement.*
 
-Le déploiement cible un serveur OVH avec Apache et mod_wsgi, dans la continuité des autres applications du portfolio hébergées sur `cartonicolasrey.duckdns.org`.
+Le déploiement cible un serveur OVH avec Apache et mod_wsgi, dans la continuité des autres applications du portfolio hébergées sur `cartonicolasreyromano.fr`.
